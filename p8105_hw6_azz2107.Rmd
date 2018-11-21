@@ -1,0 +1,17 @@
+---
+title: "Untitled"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+```{r homicide_df, message = FALSE}
+# Pull dataset from web and convert it to readable format in R
+# Create city_state variable that combines city and state
+homicide_df = read_csv(url("https://raw.githubusercontent.com/washingtonpost/data-homicides/master/homicide-data.csv")) %>% 
+  unite(city_state, city:state, sep = ", ")
+```
+
