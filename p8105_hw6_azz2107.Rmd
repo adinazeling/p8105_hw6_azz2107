@@ -7,6 +7,7 @@ output: github_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
+library(modelr)
 ```
 
 ## Problem 1. **Washington Post** Dataset
@@ -52,9 +53,9 @@ baltimore_glm %>%
   knitr::kable(digits = 3)
 ```
 
-Compared to white victims, non-white victims have a 0.441 odds of having resolved homicides between 2010 and 2016. We are 95% confident that the true odds ratio of resolved homicides for non-white victims is between 0.312 and 0.62.
+Compared to white victims, non-white victims in Baltimore, MD have a 0.441 odds of having resolved homicides between 2010 and 2016. We are 95% confident that the true odds ratio of resolved homicides for non-white victims is between 0.312 and 0.62.
 
-#### Fit glm across each city
+#### Fit linear model across each city
 
 ```{r homicide_glm}
 # Nest dataset by city_state in order to apply glm across each city_state
@@ -83,7 +84,7 @@ homicide_glm %>%
   geom_point() + 
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high)) +
   labs(
-    title = "Estimated ORs for solving homicides comparing non-white to white victims",
+    title = "Estimated odds ratios of solving homicides, comparing non-white to white victims",
     x = "Location (City, State)",
     y = "Estimated Odds Ratio"
   ) + 
@@ -91,3 +92,77 @@ homicide_glm %>%
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ```
 
+Overall, most cities have a low estimated odds ratio when comparing solved homicides between non-white and white victims. Most odds ratios are below 1, indicating that the odds of having a solved homicide for non-white victims is lower than it is for white victims. The lowest odds ratios occur in Oakland, CA, Omaha, NE, and Boston, MA ([link](https://apps.bostonglobe.com/spotlight/boston-racism-image-reality/) to Boston Globe's report, is Boston racist?). However, there are a few cities that do not see much different between between non-white and white victims. Some of these include San Bernardino, CA, Durham, NC, Birmingham, AL, and Tampa, FL. These cities have estimated odds ratio near or even above 1. It should also be noted that these cities have wide confidence intervals which indicates large variability in the dataset and the true odds ratio could be much lower or higher than the one estimated.
+
+## Problem 2: Birthweight dataset
+
+#### Load and clean dataset
+```{r birthweight_df, message = FALSE}
+birthweight_df = read_csv("./birthweight.csv") %>% 
+  mutate(babysex = as.factor(babysex),
+         frace = as.factor(frace),
+         mrace = as.factor(mrace),
+         malform = as.factor(malform)) %>% 
+  select(-pnumlbw, -pnumsga)
+```
+
+#### Build a model to predict birthweight and fit to linear regression
+
+```{r}
+# Select initial variables based off of highest correlation to birthweight
+birthweight_df %>% 
+  select(bwt, bhead, blength, delwt, gaweeks, mrace, wtgain) %>% 
+  mutate(mrace = as.numeric(mrace)) %>% 
+  cor() %>% 
+  knitr::kable()
+
+```
+
+```{r}
+fit1 = lm(bwt ~ bhead + blength + delwt + gaweeks + mrace + wtgain,
+              data = birthweight_df)
+summary(fit1) %>% broom::tidy()
+
+step1 <- update(fit1, . ~ . -mrace)
+summary(step1) %>% broom::tidy()
+
+step2 <- update(step1, . ~ . -wtgain)
+summary(step2) %>% broom::tidy()
+
+```
+
+My final model includes only birth length, baby's head circumference at birth, delivery weight and gestational age.
+
+```{r}
+fit1 = lm(bwt ~ blength + bhead + gaweeks + delwt, data = birthweight_df)
+summary(fit1)
+```
+
+
+```{r}
+# Plot of model residuals against fitted values
+birthweight_df %>% 
+  add_residuals(fit1) %>% 
+  add_predictions(fit1) %>% 
+  ggplot(aes(x = pred, y = resid)) + 
+  geom_point() + 
+  labs(
+    title = "Fitted values vs. Residuals",
+    x = "Fitted values", 
+    y = "Residuals"
+  ) + 
+  theme_bw()
+```
+
+
+#### Compare to other models
+
+```{r}
+# Fit a second model using birth length and gestational age as predictors
+fit2 = lm(bwt ~ blength + gaweeks, data = birthweight_df) 
+
+# Fit a third model using head circumference, length, sex, and all interactions between these variables
+fit3 = lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex,
+          data = birthweight_df)
+
+```
