@@ -108,42 +108,31 @@ birthweight_df = read_csv("./birthweight.csv") %>%
 
 #### Build a model to predict birthweight and fit to linear regression
 
+Using the built-in correlation function, I narrowed down the predictors to six predictors which had the largest correlations with birthweight. These are shown in the table below. I chose correlations which were greater than 0.20. Just to ensure these predictors were significant, I fit the predictors through regression. Each p-value (except for mrace at level 3) was significant at $\alpha$ = 0.001 level. Therefore, my final model includes birth length, circumference of head at birth, gestational age, delivery weight of the mother, weight gain of the mother, and mother's race.
+
 ```{r}
 # Select initial variables based off of highest correlation to birthweight
 birthweight_df %>% 
-  select(bwt, bhead, blength, delwt, gaweeks, mrace, wtgain) %>% 
+  select(bwt, bhead, blength, gaweeks, delwt, wtgain, mrace) %>% 
   mutate(mrace = as.numeric(mrace)) %>% 
   cor() %>% 
   knitr::kable()
-
 ```
 
+
 ```{r}
-fit1 = lm(bwt ~ bhead + blength + delwt + gaweeks + mrace + wtgain,
+# Fit regression model
+mult.fit = lm(bwt ~ bhead + blength + gaweeks + delwt + wtgain + mrace, 
               data = birthweight_df)
-summary(fit1) %>% broom::tidy()
-
-step1 <- update(fit1, . ~ . -mrace)
-summary(step1) %>% broom::tidy()
-
-step2 <- update(step1, . ~ . -wtgain)
-summary(step2) %>% broom::tidy()
-
-```
-
-My final model includes only birth length, baby's head circumference at birth, delivery weight and gestational age.
-
-```{r}
-fit1 = lm(bwt ~ blength + bhead + gaweeks + delwt, data = birthweight_df)
-summary(fit1)
+summary(mult.fit)
 ```
 
 
 ```{r}
 # Plot of model residuals against fitted values
 birthweight_df %>% 
-  add_residuals(fit1) %>% 
-  add_predictions(fit1) %>% 
+  add_residuals(mult.fit) %>% 
+  add_predictions(mult.fit) %>% 
   ggplot(aes(x = pred, y = resid)) + 
   geom_point() + 
   labs(
@@ -154,15 +143,55 @@ birthweight_df %>%
   theme_bw()
 ```
 
+Using my regression model, most point are evenly distributed around the residuals = 0 line. However, there are a handful of outliers towards the left of the cluster showing a few fitted values with large residuals.
 
 #### Compare to other models
 
-```{r}
-# Fit a second model using birth length and gestational age as predictors
-fit2 = lm(bwt ~ blength + gaweeks, data = birthweight_df) 
+Model 1: A model with parameters that were determined in the previous part (my model).  
+Model 2: A model using birth length and gestational age as predictors.  
+Model 3: A model using head circumference, length, sex, and all interactions between these three variables.  
 
-# Fit a third model using head circumference, length, sex, and all interactions between these variables
-fit3 = lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex,
-          data = birthweight_df)
 
+```{r crossvalidation}
+# Create training and testing dataframes 
+set.seed(1)
+
+cv_df =
+  crossv_mc(birthweight_df, 100) %>% 
+  mutate(train = map(train, as_tibble),
+         test = map(test, as_tibble))
+
+# Cross validation of three models
+# Run regressions across training dataframes
+# Apply regression models to testing dataframes
+cv_df = 
+  cv_df %>% 
+  mutate(model_1 = map(train, ~lm(bwt ~ bhead + blength + gaweeks + delwt + wtgain + mrace, 
+                                  data = birthweight_df)),
+         model_2 = map(train, ~lm(bwt ~ blength + gaweeks, data = .x)),
+         model_3 = map(train, ~lm(bwt ~ bhead + blength + babysex + 
+                                 bhead*blength + bhead*babysex + blength*babysex,
+                               data = .x))) %>% 
+  mutate(rmse_fit1 = map2_dbl(model_1, test, ~rmse(model = .x, data = .y)),
+         rmse_fit2 = map2_dbl(model_2, test, ~rmse(model = .x, data = .y)),
+         rmse_fit3 = map2_dbl(model_3, test, ~rmse(model = .x, data = .y)))
 ```
+
+## Plot RMSE violin plots
+
+```{r rmse_plot}
+# Violin plots of RMSE for each model
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  gather(key = model, value = rmse) %>% 
+  mutate(model = str_replace(model, "rmse_", ""),
+         model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) + 
+  geom_violin() + 
+  labs(
+    title = "RMSE across models"
+  ) +
+  theme_bw()
+```
+
+Based off of the above plot, the distribution of RMSE for my model fits the best. In my model (fit1), the distribution of the RMSE through each cross-validation iteration is much lower than model 2 and slightly lower than model 3. 
